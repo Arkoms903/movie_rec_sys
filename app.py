@@ -3,146 +3,76 @@ import pickle
 import requests
 import pandas as pd
 
-# Page Config
-st.set_page_config(
-    page_title="Movie Recommender",
-    page_icon="🎬",
-    layout="wide"
-)
+# ---------------- PAGE TITLE ----------------
+st.set_page_config(page_title="Movie Recommendation System", page_icon="🎬")
+st.title("🎬 Movie Recommendation System")
 
-# Netflix Style CSS
-st.markdown("""
-<style>
-
-/* App background */
-.stApp {
-    background: linear-gradient(to bottom, #0f0f0f, #141414);
-    color: white;
-}
-
-/* Title */
-h1 {
-    text-align: center;
-    color: #E50914;
-    font-size: 60px;
-    font-weight: bold;
-}
-
-/* Subtitle */
-.subtitle {
-    text-align: center;
-    color: #bbbbbb;
-    font-size: 20px;
-}
-
-/* Button styling */
-.stButton>button {
-    background-color: #E50914;
-    color: white;
-    border-radius: 10px;
-    height: 3.2em;
-    width: 220px;
-    font-size: 18px;
-    border: none;
-    transition: 0.3s;
-}
-
-.stButton>button:hover {
-    background-color: #b20710;
-    transform: scale(1.05);
-}
-
-/* Movie cards */
-.movie-card {
-    text-align: center;
-    padding: 10px;
-    border-radius: 12px;
-    transition: transform 0.3s;
-}
-
-.movie-card:hover {
-    transform: scale(1.08);
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-# Title Section
-st.markdown("<h1>🎬 Movie Recommender</h1>", unsafe_allow_html=True)
-
-st.markdown(
-    "<p class='subtitle'>Find movies similar to your favorites instantly 🍿</p>",
-    unsafe_allow_html=True
-)
-
-# Load data
+# ---------------- LOAD FILES ----------------
 movies_dict = pickle.load(open("movie_dict.pkl", "rb"))
 movies = pd.DataFrame(movies_dict)
 
 similarity = pickle.load(open("similarity.pkl", "rb"))
 
-# Poster Fetch Function
-@st.cache_data
+# ---------------- FETCH POSTER ----------------
+@st.cache_data(ttl=3600)
 def fetch_poster(movie_title):
-
     url = f"https://www.omdbapi.com/?t={movie_title}&apikey=eb6c2602"
 
     try:
-        data = requests.get(url).json()
+        response = requests.get(url, timeout=3)
+        data = response.json()
         poster = data.get("Poster")
+        
+        if poster and poster != "N/A":
+            return poster
     except:
-        return "https://via.placeholder.com/342x500?text=Error"
+        pass
+    
+    return "https://via.placeholder.com/300x450?text=No+Image"
 
-    if poster and poster != "N/A":
-        return poster
-    else:
-        return "https://via.placeholder.com/342x500?text=No+Image"
-
-# Recommendation Function
+# ---------------- RECOMMEND FUNCTION ----------------
 @st.cache_data
 def recommend(movie):
+    movie_index = movies[movies["title"] == movie].index[0]
 
-    movie_index = movies[movies['title'] == movie].index[0]
+    # similarity scores of selected movie
+    distances = similarity[movie_index]
 
-    similar_movies = similarity[movie_index][:5]
+    # sort by highest similarity
+    movies_list = sorted(
+        list(enumerate(distances)),
+        reverse=True,
+        key=lambda x: x[1]
+    )[1:6]   # skip itself, take top 5
 
     recommended_movies = []
     recommended_posters = []
 
-    for i in similar_movies:
-        title = movies.iloc[i]['title']
+    for i in movies_list:
+        movie_id = i[0]
+        title = movies.iloc[movie_id]["title"]
         recommended_movies.append(title)
         recommended_posters.append(fetch_poster(title))
 
     return recommended_movies, recommended_posters
 
-
-# Movie Selection
+# ---------------- UI ----------------
 selected_movie_name = st.selectbox(
-    "🎥 Select a Movie",
-    movies['title'].values
+    "Select a movie",
+    movies["title"].values
 )
 
-# Recommendation Button
-if st.button("🍿 Recommend Movies"):
+if st.button("Recommend", use_container_width=True):
+    # Show loading message
+    with st.spinner("Finding recommendations..."):
+        names, posters = recommend(selected_movie_name)
 
-    names, posters = recommend(selected_movie_name)
-
-    st.markdown("## 🔥 Top Picks For You")
-
-    cols = st.columns(5)
+    cols = st.columns(5, gap="medium")
 
     for i in range(5):
         with cols[i]:
-            st.markdown("<div class='movie-card'>", unsafe_allow_html=True)
-            st.image(posters[i])
-            st.markdown(f"**{names[i]}**")
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.image(posters[i], use_container_width=True)
+            st.markdown(f"<p style='text-align: center; font-weight: bold; font-size: 14px;'>{names[i]}</p>", unsafe_allow_html=True)
 
-# Footer
-st.markdown("---")
-
-st.markdown(
-    "<center>Built with ❤️ using Streamlit | Posters via OMDb API</center>",
-    unsafe_allow_html=True
-)
+# Optional debug
+# st.write(similarity[0][:10])
